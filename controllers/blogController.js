@@ -2,6 +2,55 @@
 import Blog from "../models/Blog.js";
 import slugify from "slugify";
 
+const normalizeImagePath = (filePath) =>
+  filePath ? filePath.replace(/\\/g, "/").replace(/^\/+/, "") : "";
+
+const getStoredImagePath = (file) => {
+  if (!file) {
+    return "";
+  }
+
+  // Keep DB values portable across environments.
+  return normalizeImagePath(`uploads/blogs/${file.filename}`);
+};
+
+const getBaseUrl = (req) => {
+  const configuredBaseUrl = process.env.PUBLIC_BASE_URL || process.env.SERVER_BASE_URL;
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/+$/, "");
+  }
+
+  const forwardedProtoHeader = req.headers["x-forwarded-proto"];
+  const protocol =
+    typeof forwardedProtoHeader === "string" && forwardedProtoHeader.length > 0
+      ? forwardedProtoHeader.split(",")[0].trim()
+      : req.protocol;
+
+  return `${protocol}://${req.get("host")}`;
+};
+
+const toPublicImageUrl = (req, imagePath) => {
+  if (!imagePath) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(imagePath)) {
+    return imagePath;
+  }
+
+  const normalizedPath = normalizeImagePath(imagePath);
+  return `${getBaseUrl(req)}/${normalizedPath}`;
+};
+
+const toBlogResponse = (req, blogDoc) => {
+  const blog = typeof blogDoc.toObject === "function" ? blogDoc.toObject() : blogDoc;
+  return {
+    ...blog,
+    imageUrl: toPublicImageUrl(req, blog.image),
+  };
+};
+
 const parseEditorContent = (rawContent) => {
   if (rawContent === undefined || rawContent === null) {
     return rawContent;
@@ -85,7 +134,7 @@ export const createBlog = async (req, res) => {
       title,
       content: parsedContent,
       slug: await getUniqueSlug(title),
-      image: req.file?.path || image,
+      image: getStoredImagePath(req.file) || image,
       status,
       authorName: req.user.name,
       authorId: req.user.id,
@@ -93,7 +142,7 @@ export const createBlog = async (req, res) => {
     });
 
     await blog.save();
-    res.status(201).json(blog);
+    res.status(201).json(toBlogResponse(req, blog));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -103,7 +152,7 @@ export const createBlog = async (req, res) => {
 export const getBlogs = async (req, res) => {
   try {
     const blogs = await Blog.find().sort({ createdAt: -1 });
-    res.json(blogs);
+    res.json(blogs.map((blog) => toBlogResponse(req, blog)));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -113,7 +162,7 @@ export const getBlogs = async (req, res) => {
 export const getAdminBlogs = async (req, res) => {
   try {
     const blogs = await Blog.find().sort({ updatedAt: -1, createdAt: -1 });
-    res.json(blogs);
+    res.json(blogs.map((blog) => toBlogResponse(req, blog)));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -128,7 +177,7 @@ export const getBlog = async (req, res) => {
       return res.status(404).json({ message: "Blog not found" });
     }
 
-    res.json(blog);
+    res.json(toBlogResponse(req, blog));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -155,8 +204,8 @@ export const updateBlog = async (req, res) => {
       updateData.slug = await getUniqueSlug(updateData.title, req.params.id);
     }
 
-    if (req.file?.path) {
-      updateData.image = req.file.path;
+    if (req.file) {
+      updateData.image = getStoredImagePath(req.file);
     }
 
     const blog = await Blog.findByIdAndUpdate(req.params.id, updateData, {
@@ -168,7 +217,7 @@ export const updateBlog = async (req, res) => {
       return res.status(404).json({ message: "Blog not found" });
     }
 
-    res.json(blog);
+    res.json(toBlogResponse(req, blog));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -187,7 +236,7 @@ export const publishBlog = async (req, res) => {
       return res.status(404).json({ message: "Blog not found" });
     }
 
-    res.json(blog);
+    res.json(toBlogResponse(req, blog));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -215,8 +264,8 @@ export const uploadBlogImage = async (req, res) => {
       return res.status(400).json({ message: "Image file is required" });
     }
 
-    const relativePath = req.file.path.replace(/\\/g, "/");
-    const imageUrl = `${req.protocol}://${req.get("host")}/${relativePath}`;
+    const relativePath = getStoredImagePath(req.file);
+    const imageUrl = toPublicImageUrl(req, relativePath);
 
     res.status(201).json({
       message: "Image uploaded",
