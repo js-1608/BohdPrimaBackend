@@ -94,3 +94,63 @@ export const login = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// Get all users (admin only)
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await Admin.find().select("-password");
+    res.json({
+      users: users.map(buildAuthPayload),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Reset user password (admin only)
+export const resetUserPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: "New password is required" });
+    }
+
+    const user = await Admin.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({
+      message: "Password reset successfully",
+      user: buildAuthPayload(user),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Delete user (admin only)
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await Admin.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    await Admin.findByIdAndDelete(id);
+
+    res.json({
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
