@@ -6,6 +6,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import blogRoutes from "./routes/blogRoutes.js";
 import leadRoutes from "./routes/leadRoutes.js";
+import cardRoutes from "./routes/cardRoutes.js";
 
 dotenv.config();
 
@@ -13,13 +14,8 @@ const app = express();
 const port = process.env.PORT || 5000;
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 
-app.use(cors({
-  origin: [
-    "https://bodhprima.com",
-    "https://www.bodhprima.com"
-  ],
-  credentials: true
-}));
+app.use(cors({ origin: corsOrigin === "*" ? true : corsOrigin.split(",").map((origin) => origin.trim()) }));
+
 app.options("*", cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -32,6 +28,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/leads", leadRoutes);
+app.use("/api/cards", cardRoutes);
 
 app.use((err, req, res, next) => {
   if (err.name === "MulterError") {
@@ -64,3 +61,5 @@ const startServer = async () => {
 };
 
 startServer();
+
+// Trigger watch reload
